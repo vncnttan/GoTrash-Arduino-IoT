@@ -62,7 +62,7 @@ void loop() {
  
 }
 
-const char* apiEndpoint = "http://194.238.19.17:5002/uploadLK";
+const char* apiEndpoint = "http://194.238.19.17:5002/upload";
 void sendPhoto1() {
   //  Camera Configuration
   camera_config_t config;
@@ -187,7 +187,7 @@ String sendPhoto() {
     delay(1000);
     ESP.restart();
   }
-
+  delay(2000);
   digitalWrite(4, LOW);  // Turn off the flash after taking the picture
   
   Serial.println("Connecting to server: " + serverName);

@@ -1,6 +1,9 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <HTTPClient.h>
+#include "soc/soc.h"           // Disable brownour problems
+#include "soc/rtc_cntl_reg.h"  // Disable brownour problems
+#include "driver/rtc_io.h"
 #include "esp_camera.h"
 #include "esp_system.h"
 
@@ -9,6 +12,7 @@ void IRAM_ATTR resetModule(){
     Serial.println("reboot\n");
     esp_restart();
 }
+RTC_DATA_ATTR int bootCount = 0;
 
 #define SSID        "POCO X6 5G"
 #define PASSWORD    "zkqe8842"
@@ -37,7 +41,7 @@ const char* apiEndpoint = "http://194.238.19.17:5002/upload";
 // Your Sensor Pins
 const int trigPin = 13;
 const int echoPin = 15;
-boolean startTimer = false;
+boolean processingImage = false;
 unsigned long time_now = 0;
 int pinSensor = 1, Cam_capture = 0 ,time_capture=0;
 long duration;
@@ -46,6 +50,7 @@ int distance;
 void setup() {
   Serial.begin(115200);
   Serial.println("ESP32-CAM Picture");
+  Serial.setDebugOutput(true);
   Serial.flush();
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
@@ -55,12 +60,8 @@ void setup() {
   while(WiFi.status() != WL_CONNECTED) { Serial.print("."); delay(400); }
   Serial.printf("\nWiFi connected\nIP : ");
   Serial.println(WiFi.localIP());  
-  
-  // Initialize timer 0 with a prescaler of 80 (1MHz frequency)
-  timer = timerBegin(1000000);
-  timerAttachInterrupt(timer, &resetModule);
-  timerAlarm(timer, 1000000, true, 0);
 
+  //  Camera Configuration
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -81,23 +82,26 @@ void setup() {
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
-  config.pixel_format = PIXFORMAT_JPEG; 
+  config.pixel_format = PIXFORMAT_JPEG;
+  
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector
+  pinMode(4, INPUT);
+  digitalWrite(4, LOW);
+  rtc_gpio_hold_dis(GPIO_NUM_4);
   
   if(psramFound()){
-    // FRAMESIZE_ +
-    //QQVGA/160x120//QQVGA2/128x160//QCIF/176x144//HQVGA/240x176
-    //QVGA/320x240//CIF/400x296//VGA/640x480//SVGA/800x600//XGA/1024x768
-    //SXGA/1280x1024//UXGA/1600x1200//QXGA/2048*1536
+    Serial.println("PSRAM Found");
     config.frame_size = FRAMESIZE_UXGA;
     config.jpeg_quality = 10;
     config.fb_count = 2;
+    config.grab_mode = CAMERA_GRAB_LATEST;
   } else {
-    config.frame_size = FRAMESIZE_QQVGA;
+    Serial.println("PSRAM Not Found");
+    config.frame_size = FRAMESIZE_UXGA;
     config.jpeg_quality = 12;
     config.fb_count = 1;
   }
-  Serial.println("I'm here 0");
-  
+
   // Init Camera
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
@@ -107,11 +111,8 @@ void setup() {
 }
 
 void loop() {
-  timerWrite(timer, 0); //reset timer (feed watchdog)
+  timerWrite(timer, 0); 
 
-  if(Cam_capture == 1){
-    Camera_capture();
-  }
   if(pinSensor == 1){
     digitalWrite(trigPin, LOW);
     delayMicroseconds(2);
@@ -121,30 +122,20 @@ void loop() {
 
     duration = pulseIn(echoPin, HIGH);
     distance = duration*0.034/2;
+    // distance = 5;
           
-    if(distance > 2 and distance <= 30 && startTimer != true){
+    if(distance > 2 && distance <= 30 && processingImage != true){
+      processingImage = true;
       Camera_capture();
-      startTimer = true;
-    } else if(distance > 300){
-      startTimer = false;
-      time_capture=0;
-    }
-    if(distance > 2 and distance <= 30){
-      if(++time_capture > 4){
-        time_capture=0;
-        Camera_capture();
-        Serial.println("Over Time");
-      }
     }
   }
-  delay(500);
+  delay(2000);
 }
 
 void Camera_capture() {
   Serial.println("Capturing with camera");
   camera_fb_t * fb = NULL;
-  delay(200); 
-
+  
   // Activate flash
   pinMode(4, OUTPUT);
   digitalWrite(4, HIGH);  
@@ -152,18 +143,17 @@ void Camera_capture() {
 
   // Take Picture with Camera
   fb = esp_camera_fb_get(); 
+  delay(100);
   if(!fb) {
     Serial.println("Camera capture failed");
-    digitalWrite(4, LOW);
+    digitalWrite(4, LOW);  // Turn off the flash after taking the picture
+    delay(1000);
     return;
   }
   delay(2000);
   digitalWrite(4, LOW);
 
-  Send_request(fb->buf,fb->len, fb);
-  
-  esp_camera_fb_return(fb);
-  Serial.println("OK"); 
+  Send_request(fb->buf, fb->len, fb);
 }
 
 void Send_request(uint8_t *image_data, size_t image_size, camera_fb_t * fb){
@@ -172,7 +162,6 @@ void Send_request(uint8_t *image_data, size_t image_size, camera_fb_t * fb){
     HTTPClient http;
     http.begin(apiEndpoint);
     http.addHeader("Content-Type", "image/jpeg");
-    
     int httpResponseCode = http.POST(fb->buf, fb->len);
     
     esp_camera_fb_return(fb); 
@@ -190,6 +179,7 @@ void Send_request(uint8_t *image_data, size_t image_size, camera_fb_t * fb){
   }
 
   delay(1000);
+  processingImage = false;
 }
 
 
