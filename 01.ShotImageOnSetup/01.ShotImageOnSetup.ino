@@ -1,14 +1,3 @@
-/*********
-  Rui Santos
-  Complete project details at https://RandomNerdTutorials.com/esp32-cam-pir-motion-detector-photo-capture/
- 
-  IMPORTANT!!!
-   - Select Board "AI Thinker ESP32-CAM"
-   - GPIO 0 must be connected to GND to upload a sketch
-   - After connecting GPIO 0 to GND, press the ESP32-CAM on-board RESET button to put your board in flashing mode
- 
-*********/
- 
 #include "esp_camera.h"
 #include "Arduino.h"
 #include "FS.h"                // SD Card ESP32
@@ -22,9 +11,12 @@
 // define the number of bytes you want to access
 #define EEPROM_SIZE 1
 
-const char* ssid = "POCO X6 5G";
-const char* password = "zkqe8842";
- 
+// const char* ssid = "POCO X6 5G";
+// const char* password = "zkqe8842";
+
+const char* ssid = "Marvin";
+const char* password = "marvinnn";
+
 String serverName = "194.238.19.17";
 String serverPath = "/uploadFile";
 const int serverPort = 5002;
@@ -53,16 +45,16 @@ RTC_DATA_ATTR int bootCount = 0;
 int pictureNumber = 0;
   
 void setup() {
- 
   sendPhoto1();
-  
 } 
  
 void loop() {
  
 }
 
-const char* apiEndpoint = "http://194.238.19.17:5002/upload";
+// const char* apiEndpoint = "http://194.238.19.17:5002/upload";
+const char* apiEndpoint = "https://gotrash.online/upload";
+
 void sendPhoto1() {
   //  Camera Configuration
   camera_config_t config;
@@ -147,11 +139,37 @@ void sendPhoto1() {
   digitalWrite(4, LOW);  // Turn off the flash after taking the picture
 
   if (WiFi.status() == WL_CONNECTED) {
-    // For content type image jpeg
     HTTPClient http;
     http.begin(apiEndpoint);
-    http.addHeader("Content-Type", "image/jpeg");
-    int httpResponseCode = http.POST(fb->buf, fb->len);
+
+    String boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
+    String contentType = "multipart/form-data; boundary=" + boundary;
+    http.addHeader("Content-Type", contentType.c_str());
+
+    // Start constructing the body
+    String bodyStart = "--" + boundary + "\r\n";
+    bodyStart += "Content-Disposition: form-data; name=\"image\"; filename=\"image.jpg\"\r\n";
+    bodyStart += "Content-Type: image/jpeg\r\n\r\n";
+
+    String bodyEnd = "\r\n--" + boundary + "--\r\n";
+
+    // Total size of the body
+    int contentLength = bodyStart.length() + fb->len + bodyEnd.length();
+    http.addHeader("Content-Length", String(contentLength));
+
+    // Send the headers
+    http.addHeader("Content-Length", String(contentLength));
+
+    // Start the connection and send the HTTP headers
+    WiFiClient* stream = http.getStreamPtr();
+
+    // Write the multipart form data
+    stream->print(bodyStart);
+    stream->write(fb->buf, fb->len); // Send the image data
+    stream->print(bodyEnd);
+
+    // End the request
+    int httpResponseCode = http.POST("");
 
     esp_camera_fb_return(fb);  // Return the frame buffer before ending HTTP connection
 
@@ -163,10 +181,9 @@ void sendPhoto1() {
       Serial.print("Error on sending POST: ");
       Serial.println(httpResponseCode);
     }
-    
+
     http.end();
   }
-
 }
 
 
