@@ -54,9 +54,9 @@ long duration;
 int distance;
 
 // Server Address
-String serverName = "gotrash.online";  //--> Change with your server computer's IP address or your Domain name.
-String serverPath = "/upload";
-const int serverPort = 443;
+String serverNameFlask = "gotrash.online";  //--> Change with your server computer's IP address or your Domain name.
+String serverPathFlask = "/upload";
+const int serverPortFlask = 443;
 
 // Server Address Backend
 String serverNameBE = "gotrash.site";
@@ -183,7 +183,7 @@ void loop() {
     if(user_id != -1) {
       Serial.println("Notice user....");
       noticeUser(res, user_id);
-      // sendUserRequest(id, res, serverName, serverPort, root_ca);
+      // sendUserRequest(id, res, serverName, serverPortFlask, root_ca);
       res = -1;
     } 
   }
@@ -231,10 +231,10 @@ int sendPhotoToServer() {
   Serial.println("Taking a photo was successful.");
 
   client.setCACert(root_ca);
-  Serial.println("Connecting to server: " + serverName);
+  Serial.println("Connecting to server: " + serverNameFlask);
 
   int categoryNum = 0;
-  if (client.connect(serverName.c_str(), serverPort)) {
+  if (client.connect(serverNameFlask.c_str(), serverPortFlask)) {
     Serial.println("Connection successful!");
 
     String post_data = "--dataMarker\r\nContent-Disposition: form-data; name=\"image\"; filename=\"ESP32CAMCap.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n";
@@ -245,7 +245,7 @@ int sendPhotoToServer() {
     uint32_t dataLen = head.length() + boundary.length();
     uint32_t totalLen = imageLen + dataLen;
 
-    client.println("POST " + serverPath + " HTTP/1.1");
+    client.println("POST " + serverPathFlask + " HTTP/1.1");
     client.println("Host: " + serverName);
     client.println("Content-Length: " + String(totalLen));
     client.println("Content-Type: multipart/form-data; boundary=dataMarker");
@@ -295,7 +295,7 @@ int sendPhotoToServer() {
     categoryNum = deserializeCategoryJson(DataBody);
   } else {
     client.stop();
-    Serial.println(client.connect(serverName.c_str(), serverPort));
+    Serial.println(client.connect(serverName.c_str(), serverPortFlask));
     client.stop();
     DataBody = "Connection to " + serverName + " failed.";
     Serial.println(DataBody);
@@ -318,7 +318,7 @@ int sendPhotoToServer() {
 //     String post_data = "userId=" + String(userId) + "&categoryNum=" + String(categoryNum) + "&sampahId=" + sampahId;
 //     uint32_t dataLen = post_data.length();
 
-//     client.println("POST " + serverPath + " HTTP/1.1");
+//     client.println("POST " + serverPathFlask + " HTTP/1.1");
 //     client.println("Host: " + serverName);
 //     client.println("Content-Length: " + String(post_data.length()));
 //     client.println("Content-Type: multipart/form-data; boundary=dataMarker");
@@ -366,7 +366,7 @@ int sendPhotoToServer() {
 //     categoryNum = deserializeCategoryJson(DataBody);
 //   } else {
 //     client.stop();
-//     Serial.println(client.connect(serverName.c_str(), serverPort));
+//     Serial.println(client.connect(serverName.c_str(), serverPortFlask));
 //     client.stop();
 //     DataBody = "Connection to " + serverName + " failed.";
 //     Serial.println(DataBody);
