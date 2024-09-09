@@ -9,6 +9,7 @@
 #include "esp_system.h"
 #include <HardwareSerial.h>
 #include <gotrashble.h>
+#include <Arduino.h>
 
 void IRAM_ATTR resetModule() {
   Serial.println("reboot\n");
@@ -54,13 +55,13 @@ long duration;
 int distance;
 
 // Server Address
-String serverNameFlask = "gotrash.online";  //--> Change with your server computer's IP address or your Domain name.
+String serverNameFlask = "gotrash.online"; 
 String serverPathFlask = "/upload";
 const int serverPortFlask = 443;
 
 // Server Address Backend
 String serverNameBE = "gotrash.site";
-String serverPathBE = "/todo";
+String serverPathBE = "/api/user/coin";
 const int serverPortBE = 443;
 
 // Initialize WiFiClient.
@@ -128,6 +129,7 @@ const char *root_ca_BE =
   "-----END CERTIFICATE-----\n";
 
 int res = -1;
+int trashId = 0;
 
 void setup() {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
@@ -165,7 +167,7 @@ void loop() {
   if (distance > 2 && distance <= 60 && processingImage != true) {
     processingImage = true;
 
-    res = sendPhotoToServer();
+    sendPhotoToServer();
     // SerialPort.print("FUNC:");
     // SerialPort.print(res);
     Serial.println("Sent function call with parameter: " + String(res));
@@ -177,19 +179,36 @@ void loop() {
   }
 
   if (res != -1) {
-    int user_id = getCurrentUser();
-    Serial.println("Current User: " + String(user_id));
+    int userId = getCurrentUser();
+    Serial.println("Current User: " + String(userId));
 
-    if(user_id != -1) {
+    if(userId != -1) {
       Serial.println("Notice user....");
-      noticeUser(res, user_id);
-      // sendUserRequest(id, res, serverName, serverPortFlask, root_ca);
+      noticeUser(res, userId);
+      sendUserRequest(userId, trashId);
       res = -1;
     } 
   }
+
+  delay(20000);
 }
 
-int sendPhotoToServer() {
+StaticJsonDocument<1024> deserializeCategoryJson(String json) {
+  StaticJsonDocument<1024> doc;
+  // Parse JSON
+  DeserializationError error = deserializeJson(doc, json);
+
+  if (error) {
+    Serial.print(F("deserializeJson() failed: "));
+    Serial.println(error.c_str());
+
+    return doc;
+  }
+
+  return doc;
+}
+
+void sendPhotoToServer() {
   String AllData;
   String DataBody;
 
@@ -210,7 +229,8 @@ int sendPhotoToServer() {
       Serial.println("Restarting the ESP32 CAM.");
       delay(1000);
       ESP.restart();
-      return -1;
+      res = 0;
+      return;
     }
     esp_camera_fb_return(fb);
     delay(200);
@@ -223,7 +243,8 @@ int sendPhotoToServer() {
     Serial.println("Restarting the ESP32 CAM.");
     delay(1000);
     ESP.restart();
-    return -1;
+    res = 0;
+    return;
   }
 
   if (LED_Flash_ON == true) digitalWrite(FLASH_LED_PIN, LOW);
@@ -246,7 +267,7 @@ int sendPhotoToServer() {
     uint32_t totalLen = imageLen + dataLen;
 
     client.println("POST " + serverPathFlask + " HTTP/1.1");
-    client.println("Host: " + serverName);
+    client.println("Host: " + serverNameFlask);
     client.println("Content-Length: " + String(totalLen));
     client.println("Content-Type: multipart/form-data; boundary=dataMarker");
     client.println("Connection: close");
@@ -292,105 +313,27 @@ int sendPhotoToServer() {
     Serial.println(DataBody);
     Serial.println("-----------");
 
-    categoryNum = deserializeCategoryJson(DataBody);
+    // The side effect that will be changed
+    // The res and trashId will be changed
+    StaticJsonDocument<1024> docResponse = deserializeCategoryJson(DataBody);
+    if (docResponse == nullptr) {
+      res = 0;
+      Serial.println("Deserialization failed");
+    } else {
+      res = docResponse['category'];
+      trashId = docResponse['trashId'];
+    }
   } else {
     client.stop();
-    Serial.println(client.connect(serverName.c_str(), serverPortFlask));
-    client.stop();
-    DataBody = "Connection to " + serverName + " failed.";
+    DataBody = "Connection to " + serverNameBE + " failed.";
     Serial.println(DataBody);
     Serial.println("-----------");
   }
 
-  return categoryNum;
+  return;
 }
 
-// void sendUserRequest(int userId, int categoryNum, String sampahId) {
-//   String AllData;
-//   String DataBody;
 
-//   client.setCACert(root_ca_BE);
-//   Serial.println("Connecting to server: " + serverNameBE);
-
-//   if (client.connect(serverName.c_str(), serverPortBE)) {
-//     Serial.println("Connection successful!");
-
-//     String post_data = "userId=" + String(userId) + "&categoryNum=" + String(categoryNum) + "&sampahId=" + sampahId;
-//     uint32_t dataLen = post_data.length();
-
-//     client.println("POST " + serverPathFlask + " HTTP/1.1");
-//     client.println("Host: " + serverName);
-//     client.println("Content-Length: " + String(post_data.length()));
-//     client.println("Content-Type: multipart/form-data; boundary=dataMarker");
-//     client.println("Connection: close");
-//     client.println();
-//     client.print(head);
-
-//     uint8_t *fbBuf = fb->buf;
-//     size_t fbLen = fb->len;
-//     for (size_t n = 0; n < fbLen; n = n + 1024) {
-//       if (n + 1024 < fbLen) {
-//         client.write(fbBuf, 1024);
-//         fbBuf += 1024;
-//       } else if (fbLen % 1024 > 0) {
-//         size_t remainder = fbLen % 1024;
-//         client.write(fbBuf, remainder);
-//       }
-//     }
-//     client.print(boundary);
-
-//     int timoutTimer = 10000;
-//     long startTimer = millis();
-//     boolean state = false;
-//     Serial.println("Response : ");
-//     while ((startTimer + timoutTimer) > millis()) {
-//       Serial.print(".");
-//       delay(200);
-
-//       while (client.available()) {
-//         char c = client.read();
-//         if (c == '\n') {
-//           if (AllData.length()==0) { state=true; }
-//           AllData = "";
-//         }
-//         else if (c != '\r') { AllData += String(c); }
-//         if (state==true) { DataBody += String(c); }
-//         startTimer = millis();
-//       }
-//       if (DataBody.length() > 0) { break; }
-//     }
-//     client.stop();
-//     Serial.println(DataBody);
-//     Serial.println("-----------");
-
-//     categoryNum = deserializeCategoryJson(DataBody);
-//   } else {
-//     client.stop();
-//     Serial.println(client.connect(serverName.c_str(), serverPortFlask));
-//     client.stop();
-//     DataBody = "Connection to " + serverName + " failed.";
-//     Serial.println(DataBody);
-//     Serial.println("-----------");
-//   }
-// }
-
-
-int deserializeCategoryJson(String json) {
-  StaticJsonDocument<1024> doc;
-  // Parse JSON
-  DeserializationError error = deserializeJson(doc, json);
-
-  if (error) {
-    Serial.print(F("deserializeJson() failed: "));
-    Serial.println(error.c_str());
-
-    return 3;
-  }
-
-  int category = doc["category"];
-  Serial.println(category);
-  return category;
-}
 
 void setupWifi() {
   WiFi.mode(WIFI_STA);
@@ -421,6 +364,60 @@ void setupWifi() {
   Serial.print("Successfully connected to ");
   Serial.println(ssid);
 }
+
+void sendUserRequest(int userId, int trashId) {
+  String AllData;
+  String DataBody;
+
+  client.setCACert(root_ca_BE);
+  Serial.println("Connecting to server: " + serverNameBE);
+
+  if (client.connect(serverNameBE.c_str(), serverPortBE)) {
+    Serial.println("Connection successful!");
+
+    String jsonPayload = "{\"userId\":" + String(userId) + ",\"trashId\":" + String(trashId) + "}";
+    
+    client.println("POST " + serverPathBE + " HTTP/1.1");
+    client.println("Host: " + serverNameBE);
+    client.println("Content-Type: application/json");
+    client.println("Content-Length: " + String(jsonPayload.length()));
+    client.println("Connection: close");
+    client.println();
+    client.println(jsonPayload);
+    Serial.println(jsonPayload);
+
+    int timoutTimer = 10000;
+    long startTimer = millis();
+    boolean state = false;
+    Serial.println("Response : ");
+    while ((startTimer + timoutTimer) > millis()) {
+      Serial.print(".");
+      delay(200);
+
+      while (client.available()) {
+        char c = client.read();
+        if (c == '\n') {
+          if (AllData.length()==0) { state=true; }
+          AllData = "";
+        }
+        else if (c != '\r') { AllData += String(c); }
+        if (state==true) { DataBody += String(c); }
+        startTimer = millis();
+      }
+      if (DataBody.length() > 0) { break; }
+    }
+    client.stop();
+    Serial.println(DataBody);
+    Serial.println("-----------");
+
+  } else {
+    client.stop();
+    DataBody = "Connection to " + serverNameBE + " failed.";
+    Serial.println(DataBody);
+    Serial.println("-----------");
+  }
+}
+
 
 void setupCamera() {
   Serial.println();
